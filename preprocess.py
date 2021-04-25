@@ -1,6 +1,8 @@
 import re
 import pandas as pd
-import os.pah as osp
+import numpy as np
+import os.path as osp
+from parameter import *
 
 def preprocess_requirements(x):
     x = re.sub('<BR>', '', x)
@@ -54,7 +56,27 @@ def preprocess_worktime_off(x):
     x = x.split("です")[0].split("）の勤務")[0]
     return np.mean([int(_x) for _x in x.split("〜")])
 
-def encode(df, sample_df=all):
+svd_flags = pd.read_pickle(osp.join(PRETRAIN_DIR, 'svd_flags.pkl'))
+location_station_2_station_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'location_station_2_station_name_dict.pkl'))
+location_station_1_station_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'location_station_1_station_name_dict.pkl'))
+location_line_2_line_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'location_line_2_line_name_dict.pkl'))
+location_line_1_line_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'location_line_1_line_name_dict.pkl'))
+employment_status_remarks_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'employment_status_remarks_dict.pkl'))
+dispatching_department_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'dispatching_department_dict.pkl'))
+dayoff_remarks_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'dayoff_remarks_dict.pkl'))
+workplace_remarks_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'workplace_remarks_dict.pkl'))
+diligent_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'diligent_name_dict.pkl'))
+tfidf_welfare = pd.read_pickle(osp.join(PRETRAIN_DIR, 'tfidf_welfare.pkl'))
+svd_welfare = pd.read_pickle(osp.join(PRETRAIN_DIR, 'svd_welfare.pkl'))
+tfidf_requirement = pd.read_pickle(osp.join(PRETRAIN_DIR, 'tfidf_requirement.pkl'))
+svd_requirement = pd.read_pickle(osp.join(PRETRAIN_DIR, 'svd_requirement.pkl'))
+tfidf_description = pd.read_pickle(osp.join(PRETRAIN_DIR, 'tfidf_description.pkl'))
+svd_description = pd.read_pickle(osp.join(PRETRAIN_DIR, 'svd_description.pkl'))
+no_use_columns = pd.read_pickle(osp.join(PRETRAIN_DIR, "no_use_columns.pkl"))
+sample_df = pd.read_csv(osp.join(DATA_DIR, f'train_x.csv'))
+sample_df = sample_df.drop(columns=no_use_columns)
+
+def encode(df, sample_df=sample_df):
     no_use_columns = ['お仕事No.', '職場の様子', '英語力不要', '給与/交通費　給与下限', '残業なし', 'PCスキル不要', '休日休暇(金曜日)',  
                         'オフィスが禁煙・分煙', '給与/交通費　交通費', '土日祝休み', '未経験OK', 'PowerPointのスキルを活かす', '大量募集', 
                         'Excelのスキルを活かす', 'Accessのスキルを活かす', 'Wordのスキルを活かす', '休日休暇(土曜日)', '平日休みあり', 
@@ -215,23 +237,38 @@ def encode(df, sample_df=all):
 
     return df_.drop(columns=no_use_columns)
 
-DATA_DIR = "./input"
-PRETRAIN_DIR = "./pretrained"
-OUTPUT_DIR = "./outputined"
+def encode_stage2(df):
+  df_ = df.copy()
+  flag_columns = [c for c in df_.columns if 'flag' in c]
+  for i, c0 in enumerate(flag_columns[:-1]):
+    for c1 in flag_columns[i+1:]:
+      df_[f"{c0}_{c1}_diff"] = df_[c0] - df_[c1]
+      df_[f"{c0}_{c1}_sum"] = df_[c0] + df_[c1]
+      df_[f"{c0}_{c1}_mult"] = df_[c0] * df_[c1]
+  
+  # """
 
-svd_flags = pd.read_pickle(osp.join(PRETRAIN_DIR, 'svd_flags.pkl'))
-location_station_2_station_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'location_station_2_station_name_dict.pkl'))
-location_station_1_station_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'location_station_1_station_name_dict.pkl'))
-location_line_2_line_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'location_line_2_line_name_dict.pkl'))
-location_line_1_line_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'location_line_1_line_name_dict.pkl'))
-employment_status_remarks_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'employment_status_remarks_dict.pkl'))
-dispatching_department_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'dispatching_department_dict.pkl'))
-dayoff_remarks_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'dayoff_remarks_dict.pkl'))
-workplace_remarks_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'workplace_remarks_dict.pkl'))
-diligent_name_dict = pd.read_pickle(osp.join(PRETRAIN_DIR, 'diligent_name_dict.pkl'))
-tfidf_welfare = pd.read_pickle(osp.join(PRETRAIN_DIR, 'tfidf_welfare.pkl'))
-svd_welfare = pd.read_pickle(osp.join(PRETRAIN_DIR, 'svd_welfare.pkl'))
-tfidf_requirement = pd.read_pickle(osp.join(PRETRAIN_DIR, 'tfidf_requirement.pkl'))
-svd_requirement = pd.read_pickle(osp.join(PRETRAIN_DIR, 'svd_requirement.pkl'))
-tfidf_description = pd.read_pickle(osp.join(PRETRAIN_DIR, 'tfidf_description.pkl'))
-svd_description = pd.read_pickle(osp.join(PRETRAIN_DIR, 'svd_description.pkl'))
+  flag_columns = [c for c in df_.columns if 'flag' in c]
+  print(df_[flag_columns].shape)
+  
+  df_flags = pd.DataFrame(svd_flags.transform(df_[flag_columns]))
+  df_flags.columns = [f"flag_{c}" for c in df_flags.columns]
+  df_ = df_.drop(columns=flag_columns)
+
+  df_ = pd.concat([
+           df_, 
+           df_flags
+  ], axis=1)
+  # """
+
+  return df_
+
+def preprocess(test, sample_df=sample_df, no_use_columns=no_use_columns):
+    test = test.drop(columns=no_use_columns)
+    test_encoded = encode(test)
+    test_encoded = encode_stage2(test_encoded)
+    return test_encoded
+
+
+
+

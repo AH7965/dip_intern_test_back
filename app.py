@@ -1,11 +1,21 @@
-from flask import Flask, abort, request, jsonify
+from flask import Flask, abort, request, Response
 
 from queue import Queue
 import functools
-import pandas as pd
 import time
+from resister import slack_token
+from parameter import *
+from preprocess import preprocess
+from estimate import estimate
+from postprocess import postprocess
+from io import StringIO
+import slackweb
+import pandas as pd
+import os.path as osp
 
-import lightgbm as lgb
+
+slack = slackweb.Slack(f"https://hooks.slack.com/services/{slack_token}")
+
 
 app = Flask(__name__)
 
@@ -46,30 +56,66 @@ def hello():
 
 @multiple_control(singleQueue)
 @app.route('/estimate', methods=["POST"])
-def slack_notify():
-    if request.args.get('device_name') is not None:
-        device_name = request.args.get('device_name')
+def app_estimate():
+    test_csv = request.files.get('file')
+    if test_csv is None:
+        return abort(404)
+    if request.headers.getlist("X-Forwarded-For"):
+        ip = request.headers.getlist("X-Forwarded-For")[0]
     else:
-        device_name = "Unknown Device"
+        ip = request.remote_addr
+    slack.notify(text=f"[ESTIMATE] : \n from {ip}")
 
-    if request.args.get('project_name') is not None:
-        project_name = request.args.get('project_name')
+    if isinstance(test_csv, FileStorage) and test_csv.content_type == 'text/csv':
+        test_df = pd.read_csv(test_csv)
     else:
-        project_name = "Unknown Project"
+        return abort(404, {'code': 'Wrong file', 'message': 'the file is not csv please send me csv'})
+    
+    test_encoded = preprocess(test_df)
+    test_preds_df = estimate(test_encoded)
+    submit_df = postprocess(test_preds_df, test_df)
+    test_df.to_csv(osp.join(DATA_DIR, f'dip_input_{time.time()}.csv'), index=False, header=True)
+    submit_df.to_csv(osp.join(OUTPUT_DIR, f'dip_estimete_{time.time()}.csv'), index=False, header=True)
 
-    if request.args.get('text') is not None:
-        text = request.args.get('text')
+    textStream = StringIO()
+    submit_df.to_csv(textStream, index=False, header=True)
+    output_name = f"estimate_{test_csv.filename}"
+    if output_name[-4:] != ".csv":
+        output_name += ".csv"
+
+    return Response(
+        textStream.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-disposition":
+                f"attachment; filename={output_name}"})
+
+
+@multiple_control(singleQueue)
+@app.route('/estimate_test', methods=["GET"])
+def app_estimate_test():
+    if request.headers.getlist("X-Forwarded-For"):
+        ip = request.headers.getlist("X-Forwarded-For")[0]
     else:
-        text = "No text"
-
-    sentence = f"[NOTIFY] \n{device_name} : \n\t{project_name} : \n\t\t{text}"
-
-
-    slack.notify(text=sentence)
-
-    return jsonify({"text" : sentence})
+        ip = request.remote_addr
+    slack.notify(text=f"[ESTIMATE TEST] : \n from {ip}")
 
 
+    test_df = pd.read_csv('./input/test_x.csv')
+    
+    test_encoded = preprocess(test_df)
+    test_preds_df = estimate(test_encoded)
+    submit_df = postprocess(test_preds_df, test_df)
+    test_df.to_csv(osp.join(DATA_DIR, f'dip_input_{time.time()}.csv'), index=False, header=True)
+    submit_df.to_csv(osp.join(OUTPUT_DIR, f'dip_estimete_{time.time()}.csv'), index=False, header=True)
+
+    textStream = StringIO()
+    submit_df.to_csv(textStream, index=False, header=True)
+
+    return Response(
+        textStream.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-disposition":
+                "attachment; filename=estimate.csv"})
 
 
 
