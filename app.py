@@ -88,36 +88,5 @@ def app_estimate():
         headers={"Content-disposition":
                 f"attachment; filename={output_name}"})
 
-
-
-@multiple_control(singleQueue)
-@app.route('/estimate_test', methods=["GET"])
-def app_estimate_test():
-    if request.headers.getlist("X-Forwarded-For"):
-        ip = request.headers.getlist("X-Forwarded-For")[0]
-    else:
-        ip = request.remote_addr
-    slack.notify(text=f"[ESTIMATE TEST] : \n from {ip}")
-
-
-    test_df = pd.read_csv('./input/test_x.csv')
-    
-    test_encoded = preprocess(test_df)
-    test_preds_df = estimate(test_encoded)
-    submit_df = postprocess(test_preds_df, test_df)
-    test_df.to_csv(osp.join(DATA_DIR, f'dip_input_{time.time()}.csv'), index=False, header=True)
-    submit_df.to_csv(osp.join(OUTPUT_DIR, f'dip_estimete_{time.time()}.csv'), index=False, header=True)
-
-    textStream = StringIO()
-    submit_df.to_csv(textStream, index=False, header=True)
-
-    return Response(
-        textStream.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-disposition":
-                "attachment; filename=estimate.csv"})
-
-
-
 if __name__ == "__main__":
     app.run()
