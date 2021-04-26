@@ -42,6 +42,15 @@ def heavy_process(data):
     return "ok : " + data
 
 
+@app.route("/wakeup_test")
+def wakeup_test():
+    if request.headers.getlist("X-Forwarded-For"):
+        ip = request.headers.getlist("X-Forwarded-For")[0]
+    else:
+        ip = request.remote_addr
+    slack.notify(text=f"[WAKE UP] : {ip} \n {request.environ['HTTP_USER_AGENT']}")
+    return "hello world"
+
 @multiple_control(singleQueue)
 @app.route('/')
 def hello():
